@@ -76,6 +76,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             async with asyncio.timeout(60):
                 await lyric.get_locations()
+                for location in lyric.locations:
+                    for device in location.devices:
+                        await lyric.get_thermostat_rooms(
+                            location.locationID, device.deviceID
+                        )
+                        # _LOGGER.critical(lyric.rooms_dict)
             return lyric
         except LyricAuthenticationException as exception:
             # Attempt to refresh the token before failing.

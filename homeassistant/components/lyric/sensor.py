@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import logging
 
 from aiolyric import Lyric
 from aiolyric.objects.device import LyricDevice
@@ -32,6 +33,8 @@ from .const import (
     PRESET_TEMPORARY_HOLD,
     PRESET_VACATION_HOLD,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 LYRIC_SETPOINT_STATUS_NAMES = {
     PRESET_NO_HOLD: "Following Schedule",
@@ -155,6 +158,22 @@ async def async_setup_entry(
                             device,
                         )
                     )
+            for key, rooms in coordinator.data.rooms_dict.items():
+                for rid, room in rooms.items():
+                    entities.append(
+                        LyricRoom(
+                            coordinator,
+                            SensorEntityDescription(
+                                key=f"{key}_{rid}",
+                                name=f"{room.roomName} temperature",
+                                device_class=SensorDeviceClass.TEMPERATURE,
+                                state_class=SensorStateClass.MEASUREMENT,
+                            ),
+                            location,
+                            device,
+                            rid,
+                        )
+                    )
 
     async_add_entities(entities)
 
@@ -189,3 +208,39 @@ class LyricSensor(LyricDeviceEntity, SensorEntity):
     def native_value(self) -> StateType | datetime:
         """Return the state."""
         return self.entity_description.value_fn(self.device)
+
+
+class LyricRoom(LyricDeviceEntity, SensorEntity):
+    """Define a Honeywell Lyric room."""
+
+    def __init__(
+        self,
+        coordinator: DataUpdateCoordinator[Lyric],
+        description: SensorEntityDescription,
+        location: LyricLocation,
+        device: LyricDevice,
+        rid: int,
+    ) -> None:
+        """Initialize."""
+        super().__init__(
+            coordinator,
+            location,
+            device,
+            f"{device.macID}_{description.key}",
+        )
+        self.rid = rid
+        self.entity_description = description
+        if description.device_class == SensorDeviceClass.TEMPERATURE:
+            if device.units == "Fahrenheit":
+                self._attr_native_unit_of_measurement = UnitOfTemperature.FAHRENHEIT
+            else:
+                self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current temperature."""
+        return (
+            self.coordinator.data.rooms_dict[self.device.macID][self.rid]
+            .accessories[0]
+            .temperature
+        )
